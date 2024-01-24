@@ -1,22 +1,22 @@
 import json
 from hashlib import md5
 
-from flask import Flask, request, jsonify
-from flask.views import MethodView
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from flask import Flask, jsonify, request
+from flask.views import MethodView
+from models import Session, User
 from schema import CreateUser, UpdateUser
-from models import User, Session
 
+app = Flask("app")
 
-app = Flask('app')
 
 class HttpError(Exception):
-
     def __init__(self, status_code: int, message: dict | str | list):
         self.status_code = status_code
         self.message = message
+
 
 def validate(json_data, schema):
     try:
@@ -29,14 +29,16 @@ def validate(json_data, schema):
 
 @app.errorhandler(HttpError)
 def error_handler(er: HttpError):
-    http_response = jsonify({'status': 'error', 'message': er.message})
+    http_response = jsonify({"status": "error", "message": er.message})
     http_response.status_code = er.status_code
     return http_response
 
-SALT = '3fgffdf577d'
+
+SALT = "3fgffdf577d"
+
 
 def hash_password(password: str):
-    password = f'{SALT}{password}'
+    password = f"{SALT}{password}"
     password = password.encode()
     password = md5(password).hexdigest()
     return password
@@ -45,40 +47,32 @@ def hash_password(password: str):
 def get_user(user_id: int, session: Session):
     user = session.get(User, user_id)
     if user is None:
-        raise HttpError(404, 'user not found')
+        raise HttpError(404, "user not found")
     return user
 
 
 class UsersView(MethodView):
-
     def get(self, user_id):
         with Session() as session:
             user = get_user(user_id, session)
-            return jsonify({
-                'id': user.id,
-                'name': user.name
-            })
-
+            return jsonify({"id": user.id, "name": user.name})
 
     def post(self):
         json_data = validate(request.json, CreateUser)
-        json_data['password'] = hash_password(json_data['password'])
+        json_data["password"] = hash_password(json_data["password"])
         with Session() as session:
             new_user = User(**json_data)
             session.add(new_user)
             try:
                 session.commit()
             except IntegrityError:
-                raise HttpError(408, 'user already exists')
-            return jsonify({
-                'id': new_user.id
-            })
-
+                raise HttpError(408, "user already exists")
+            return jsonify({"id": new_user.id})
 
     def patch(self, user_id):
         json_data = validate(request.json, UpdateUser)
-        if 'password' in json_data:
-            json_data['password'] = hash_password(json_data['password'])
+        if "password" in json_data:
+            json_data["password"] = hash_password(json_data["password"])
         with Session() as session:
             user = get_user(user_id, session)
             for key, value in json_data.items():
@@ -87,34 +81,23 @@ class UsersView(MethodView):
             try:
                 session.commit()
             except IntegrityError:
-                raise HttpError(408, 'user already exists')
-            return jsonify({
-                'status': 'success'
-            })
-
+                raise HttpError(408, "user already exists")
+            return jsonify({"status": "success"})
 
     def delete(self, user_id):
         with Session() as session:
             user = get_user(user_id, session)
             session.delete(user)
             session.commit()
-            return jsonify({
-                'status': 'success'
-            })
+            return jsonify({"status": "success"})
 
 
-user_view = UsersView.as_view('users')
+user_view = UsersView.as_view("users")
 
-app.add_url_rule(
-    '/users/',
-    view_func=user_view,
-    methods=['POST']
-)
+app.add_url_rule("/users/", view_func=user_view, methods=["POST"])
 
 app.add_url_rule(
-    '/users/<int:user_id>',
-    view_func=user_view,
-    methods=['GET', 'PATCH', 'DELETE']
+    "/users/<int:user_id>", view_func=user_view, methods=["GET", "PATCH", "DELETE"]
 )
-if __name__ == '__main__':
-    app.run()
+if __name__ == "__main__":
+    app.run(port=8000)
